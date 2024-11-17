@@ -1,119 +1,185 @@
 "use client";
 
+import dynamic from 'next/dynamic';
 import React, { useEffect, useState } from 'react';
+//import WebApp from '@twa-dev/sdk';
 import axios from 'axios';
+// Dynamically import MainButton to avoid SSR issues
+const MainButton = dynamic(() => import('@twa-dev/sdk/react').then((mod) => mod.MainButton), {
+  ssr: false, // Disable server-side rendering for this component
+});
 
-export default function Home() {
+const Home: React.FC = () => {
   const [referralCode, setReferralCode] = useState<string | null>(null);
   const [telegramId, setTelegramId] = useState<string | null>(null);
-  const [hasLoggedIn, setHasLoggedIn] = useState<boolean>(false); // State to prevent multiple logins
-  const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false); // State to track login status
+  const [hasLoggedIn, setHasLoggedIn] = useState<boolean>(false);
+  const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
+  const [isTelegramEnv, setIsTelegramEnv] = useState<boolean>(false);
+  const [buttonContext, setButtonContext] = useState<'purchase' | 'attack'>('purchase');
 
   useEffect(() => {
-    // First, try to initialize the Telegram WebApp SDK
-    if (window.Telegram && window.Telegram.WebApp) {
-      console.log("Telegram WebApp SDK detected");
-      const tg = window.Telegram.WebApp;
-      tg.ready(); // Mark the WebApp as ready
-      const initDataUnsafe = tg.initDataUnsafe;
+    const tg = window.Telegram?.WebApp;
 
-      if (initDataUnsafe) {
-        console.log("initDataUnsafe found");
-        const telegramUserId = initDataUnsafe.user?.id;
+    if (tg) {
+      console.log("Running inside Telegram WebApp environment");
+      tg.ready();
+      setIsTelegramEnv(true);
 
-        if (telegramUserId) {
-          setTelegramId(String(telegramUserId));
-          console.log("Telegram ID from SDK:", telegramUserId);
-        } else {
-          console.warn("Telegram user ID not found in initDataUnsafe.");
-        }
+      const telegramUserId = tg.initDataUnsafe?.user?.id;
+      if (telegramUserId) {
+        setTelegramId(String(telegramUserId));
+        console.log("Telegram ID from SDK:", telegramUserId);
       } else {
-        console.error("initDataUnsafe is not available.");
+        console.warn("Telegram user ID not found in initDataUnsafe.");
       }
     } else {
-      console.warn("Telegram WebApp SDK not found. Are you testing within Telegram?");
+      console.warn("Not running inside Telegram. Please open within Telegram for full functionality.");
     }
 
-    // Fallback: Extract data from URL query parameters
-    const queryParams = new URLSearchParams(window.location.search);
-    const telegramIdFromURL = queryParams.get('telegramId');
-    const referralFromURL = queryParams.get('referral');
+    const urlParams = new URLSearchParams(window.location.search);
+    const referral = urlParams.get("referral");
+    const telegramIdFromURL = urlParams.get("telegramId");
 
     if (telegramIdFromURL) {
       setTelegramId(telegramIdFromURL);
       console.log("Telegram ID from URL:", telegramIdFromURL);
     } else {
-      console.error("Telegram ID not found in URL query parameters.");
+      console.warn("Telegram ID not found in URL query parameters.");
     }
 
-    if (referralFromURL) {
-      setReferralCode(referralFromURL);
-      console.log("Referral code from URL:", referralFromURL);
+    if (referral) {
+      setReferralCode(referral);
+      console.log("Referral code from URL:", referral);
     } else {
       console.warn("Referral code not found in URL query parameters.");
     }
   }, []);
 
-  // Function to send login request to API
   const loginToAPI = async () => {
     if (hasLoggedIn) {
-      console.warn("Login has already been attempted. Skipping.");
+      console.warn("Already logged in. Skipping login.");
       return;
     }
 
-    if (!telegramId) {
-      console.error("Cannot proceed: Missing Telegram ID.");
+    if (!telegramId || !referralCode) {
+      console.error("Cannot proceed: Missing Telegram ID or referral code.");
       return;
     }
 
-    if (!referralCode) {
-      console.error("Cannot proceed: Missing referral code.");
-      return;
-    }
-
-    setIsLoggingIn(true); // Set logging in state
-
+    setIsLoggingIn(true);
     try {
-      console.log('Attempting login with telegramId:', telegramId, 'and referralCode:', referralCode);
-      const response = await axios.post('https://user-profiles-184326297587.asia-southeast1.run.app/auth/login', {
-        auth_data: {
+      const response = await axios.post(
+        'https://user-profiles-184326297587.asia-southeast1.run.app/auth/login',
+        {
+          auth_data: {
+            id: telegramId,
+            first_name: "Cobe",
+            last_name: "Cheng",
+            username: "cobecheng",
+            photo_url: "https://example.com/photo.jpg",
+            auth_date: Math.floor(Date.now() / 1000),
+            hash: "abc123hash"
+          },
           id: telegramId,
           first_name: "Cobe",
           last_name: "Cheng",
           username: "cobecheng",
           photo_url: "https://example.com/photo.jpg",
           auth_date: Math.floor(Date.now() / 1000),
-          hash: "abc123hash" // This is just a placeholder
+          hash: "abc123hash",
+          referral_code: referralCode
         },
-        id: telegramId,
-        first_name: "Cobe",
-        last_name: "Cheng",
-        username: "cobecheng",
-        photo_url: "https://example.com/photo.jpg",
-        auth_date: Math.floor(Date.now() / 1000),
-        hash: "abc123hash",
-        referral_code: referralCode
-      }, {
-        headers: {
-          Authorization: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwbGF5ZXJfaWQiOjAsImV4cCI6MTczMDk1MzU4N30.oNRtBSi6ONrlqezZkOVmUDO4AzwvHw4E5I1r-vMpwXE`
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.NEXT_PUBLIC_API_TOKEN}`
+          }
         }
-      });
+      );
 
       console.log('Login response:', response.data);
-      setHasLoggedIn(true); // Mark user as logged in after successful login
+      setHasLoggedIn(true);
     } catch (error) {
       console.error('Login error:', error);
     } finally {
-      setIsLoggingIn(false); // Reset logging in state
+      setIsLoggingIn(false);
     }
   };
 
-  // Automatically call the login function when referralCode and telegramId are set
   useEffect(() => {
     if (telegramId && referralCode && !hasLoggedIn) {
       loginToAPI();
     }
   }, [telegramId, referralCode, hasLoggedIn]);
+
+  const handlePurchase = async () => {
+    try {
+      if (!telegramId) {
+        console.error("No Telegram ID available for purchase.");
+        return;
+      }
+  
+      console.log("Attempting to call /api/createPayment with telegramId:", telegramId);
+  
+      // Call the API route to create a payment invoice
+      const response = await fetch('/api/createPayment', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId: telegramId }),
+      });
+  
+      console.log("Response status:", response.status);
+      const data = await response.json();
+      console.log("Response data:", data);
+  
+      if (response.ok) {
+        alert("Payment process initiated!");
+      } else {
+        console.error("Failed to initiate payment:", data.description || data.error);
+        alert("Failed to initiate payment. Please try again.");
+      }
+    } catch (error) {
+      console.error("Error initiating purchase:", error);
+      alert("Error occurred while initiating purchase.");
+    }
+  };
+  
+  
+
+  const notifyAttack = async () => {
+    const targetPlayerId = 5230850415;
+    const attackerName = 'PlayerX';
+    const attackDetails = 'Fireball caused 50 damage!';
+
+    try {
+      const response = await fetch('/api/notifyAttack', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetPlayerId, attackerName, attackDetails }),
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        console.log('Notification sent:', data.message);
+        alert('Attack sent!');
+      } else {
+        console.error('Failed to send notification:', data.error);
+        alert('Failed to send attack notification');
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      alert('Error occurred while sending attack');
+    }
+  };
+
+  const handleMainButtonClick = () => {
+    if (buttonContext === 'purchase') {
+      handlePurchase();
+    } else {
+      notifyAttack();
+    }
+  };
 
   return (
     <main className="flex items-center justify-center h-screen bg-gray-900 text-white p-6">
@@ -132,10 +198,34 @@ export default function Home() {
           <p className="text-yellow-400 text-center mb-6 font-semibold">Logging in...</p>
         )}
         {hasLoggedIn && (
-          <p className="text-green-500 text-center mb-6 font-semibold">You are successfully logged in!</p>
+          <>
+            <p className="text-green-500 text-center mb-6 font-semibold">You are successfully logged in!</p>
+
+            {/* Toggle Buttons */}
+            <div className="flex justify-center gap-4 mb-6">
+              <button
+                onClick={() => setButtonContext('purchase')}
+                className={`py-2 px-4 rounded-lg font-bold ${buttonContext === 'purchase' ? 'bg-blue-500' : 'bg-gray-600'}`}
+              >
+                Buy Stars
+              </button>
+              <button
+                onClick={() => setButtonContext('attack')}
+                className={`py-2 px-4 rounded-lg font-bold ${buttonContext === 'attack' ? 'bg-red-500' : 'bg-gray-600'}`}
+              >
+                Attack
+              </button>
+            </div>
+
+            {/* MainButton for Purchase or Attack */}
+            <MainButton
+              text={buttonContext === 'purchase' ? 'Buy 100 Game Stars' : 'Trigger Attack Notification'}
+              onClick={handleMainButtonClick}
+            />
+          </>
         )}
 
-        {/* Display debug information */}
+        {/* Debug Information */}
         <div className="bg-gray-700 p-4 rounded-lg">
           <h3 className="text-xl font-bold mb-3">Debug Information</h3>
           <p className="mb-2">
@@ -148,7 +238,18 @@ export default function Home() {
             <span className="font-semibold">Login Status:</span> {hasLoggedIn ? "Logged in" : "Not logged in"}
           </p>
         </div>
+
+        {/* Telegram Environment Status */}
+        {isTelegramEnv ? (
+          <p className="text-green-400 text-center mb-4">Running inside Telegram WebApp</p>
+        ) : (
+          <p className="text-red-400 text-center mb-4">
+            Warning: This app is not running inside Telegram. Please open it within Telegram for full functionality.
+          </p>
+        )}
       </div>
     </main>
   );
-}
+};
+
+export default Home;
